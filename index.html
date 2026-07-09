@@ -1044,16 +1044,19 @@
 
   // ── cloud sync (Supabase, plain REST) ──────────
   const SYNC_KEY = "morocco-trip-sync-v1";  // device-local: {url, anonKey, session, lastSync}
+  // Default project — the publishable key is designed to be public; data is guarded by RLS.
+  const SB_URL = "https://gdyjdtaopvkfdvgncqdb.supabase.co";
+  const SB_KEY = "sb_publishable_Sdr9tYlIgSpOIVVR6PkbRQ_xdzdNNpj";
   let sync = loadSyncCfg();
   let syncStatus = "off";                    // off | ok | pending | error
   let pushTimer = null;
 
   function loadSyncCfg() {
-    try {
-      const s = JSON.parse(localStorage.getItem(SYNC_KEY));
-      if (s && typeof s === "object") return s;
-    } catch (e) { /* fresh */ }
-    return { url: "", anonKey: "", session: null, lastSync: 0 };
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(SYNC_KEY)); } catch (e) { /* fresh */ }
+    if (!s || typeof s !== "object") s = { url: "", anonKey: "", session: null, lastSync: 0 };
+    if (!s.url) { s.url = SB_URL; s.anonKey = SB_KEY; }
+    return s;
   }
   function saveSyncCfg() { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); }
   const syncConfigured = () => !!(sync.url && sync.anonKey);
@@ -1228,7 +1231,8 @@
     toast("Signed out — data stays on this device");
   });
   $("syncDisconnect").addEventListener("click", () => {
-    sync = { url: "", anonKey: "", session: null, lastSync: 0 }; saveSyncCfg();
+    localStorage.removeItem(SYNC_KEY);
+    sync = loadSyncCfg();                    // back to the default project, signed out
     setSyncStatus("off");
     renderSyncDialog();
     toast("Disconnected — local data untouched");
