@@ -1183,10 +1183,13 @@
     $("syncActions").innerHTML = setup
       ? '<button class="btn btn-quiet" id="syncCancel">Cancel</button><button class="btn btn-fund" id="syncSaveCfg">Save</button>'
       : auth
-        ? '<button class="btn btn-quiet" id="syncCancel">Cancel</button><button class="btn btn-quiet" id="syncSignUp">Create account</button><button class="btn btn-fund" id="syncSignIn">Sign in</button>'
+        ? '<button class="btn btn-quiet" id="syncCancel">Not now</button><button class="btn btn-quiet" id="syncSignUp">Create account</button><button class="btn btn-fund" id="syncSignIn">Sign in</button>'
         : '<button class="btn btn-quiet" id="syncCancel">Close</button><button class="btn btn-fund" id="syncNow">Sync now</button>';
   }
   $("syncBtn").addEventListener("click", () => { renderSyncDialog(); syncDlg.showModal(); });
+  syncDlg.addEventListener("close", () => {
+    if (!state.settings.setupDone && !dlg.open) openDialog("setup");
+  });
   $("syncActions").addEventListener("click", async (e) => {
     const id = e.target.id;
     if (id === "syncCancel") { syncDlg.close(); return; }
@@ -1211,7 +1214,8 @@
         }
         renderSyncDialog();
         toast("Signed in ✓", "success");
-        fullSync();
+        await fullSync();
+        syncDlg.close();                     // close handler opens setup if the account had no data
       } catch (err) { toast(err.message || "Sign-in failed", "danger"); }
       e.target.disabled = false;
       return;
@@ -1246,9 +1250,16 @@
   $("dateInput").value = todayISO();
   document.body.classList.add("loaded");
   render();
-  if (!state.settings.setupDone) openDialog("setup");
   setSyncStatus(signedIn() ? "pending" : "off");
-  if (signedIn()) fullSync();
+  if (!signedIn()) {
+    renderSyncDialog(); syncDlg.showModal();   // login-first: sign in to pull the wallet from the cloud
+  } else {
+    if (!state.settings.setupDone) openDialog("setup");
+    fullSync().then(() => {
+      // refresh failed and cleared the session — offer to sign back in
+      if (!signedIn()) { renderSyncDialog(); syncDlg.showModal(); }
+    });
+  }
 })();
 </script>
 </body>
