@@ -44,7 +44,7 @@
   .hills{position:fixed;bottom:0;left:0;width:100%;height:26vh;z-index:0;pointer-events:none}
   @media (prefers-reduced-motion: reduce){.cloud{animation:none;left:12%}.cloud.c2{left:58%}.cloud.c3{left:34%}}
 
-  main{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:28px 20px 90px}
+  main{position:relative;z-index:1;margin:0 auto;padding:28px clamp(18px,3.5vw,56px) 90px}
 
   /* ── header ──────────────────────────────────── */
   header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
@@ -97,7 +97,7 @@
   .meter-fill.warn{background:var(--amber-fill)}
   .meter-fill.danger{background:var(--mark-danger)}
   .meter-note{margin-top:8px;font-size:.85rem;color:var(--ink-2)}
-  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:20px}
   @media (max-width:720px){.tiles{grid-template-columns:repeat(2,1fr)}}
   .tile{background:var(--card-soft);border-radius:16px;padding:14px 16px;border:1px solid var(--line)}
   .tile .t-label{font-size:.75rem;color:var(--ink-3);margin-bottom:4px}
@@ -249,11 +249,50 @@
   /* ── enhancements: card entrance ─────────────── */
   @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}}
   body.loaded .card{animation:fadeUp .55s cubic-bezier(.3,.9,.4,1) backwards}
-  body.loaded .hero{animation-delay:.05s}
-  body.loaded #budgetCard{animation-delay:.13s}
-  body.loaded #addCard{animation-delay:.21s}
-  body.loaded #chartCard{animation-delay:.29s}
-  body.loaded #txCard{animation-delay:.37s}
+  body.loaded #countdownCard{animation-delay:.02s}
+  body.loaded .hero{animation-delay:.08s}
+  body.loaded #budgetCard{animation-delay:.14s}
+  body.loaded #addCard{animation-delay:.20s}
+  body.loaded #chartCard{animation-delay:.26s}
+  body.loaded #plannedCard{animation-delay:.32s}
+  body.loaded #notesCard{animation-delay:.38s}
+  body.loaded #txCard{animation-delay:.44s}
+
+  /* ── countdown banner ────────────────────────── */
+  .countdown{padding:20px 26px;background:linear-gradient(120deg,#fffdf6 0%,#fdf3df 70%,#f9ecd4 100%)}
+  .count-wrap{display:flex;align-items:center;justify-content:center;gap:16px;text-align:left}
+  .count-emoji{font-size:2.2rem;flex:none}
+  .count-big{font-size:1.35rem;font-weight:650;line-height:1.2}
+  .count-num{font-size:1.9rem;font-variant-numeric:tabular-nums;color:var(--sage-deep)}
+  .count-sub{font-size:.88rem;color:var(--ink-2);margin-top:2px}
+
+  /* ── planned expenses ────────────────────────── */
+  .planned-summary{font-size:.85rem;color:var(--ink-2);margin-bottom:10px;line-height:1.5}
+  .planned-summary b{font-variant-numeric:tabular-nums}
+  .planned-summary .neg{color:var(--terracotta-deep)}
+  .tx.is-planned .tx-emoji{background:#f6ecd2}
+  .tx.is-planned .tx-amount{color:var(--ink-2)}
+  .tx-pay{border:none;background:transparent;color:var(--ink-3);cursor:pointer;font-size:.95rem;
+    padding:7px;border-radius:9px;transition:all .15s;font-family:inherit}
+  .tx-pay:hover{background:var(--sage-soft);color:var(--sage-deep)}
+  @media (hover:hover){
+    .tx .tx-pay{opacity:.5}
+    .tx:hover .tx-pay,.tx-pay:focus-visible{opacity:1}
+  }
+  .card-add-btn{width:100%;margin-top:14px}
+
+  /* ── notes ───────────────────────────────────── */
+  .note-list{display:flex;flex-direction:column}
+  .note-item{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);
+    background:transparent;padding:12px 6px;cursor:pointer;font-family:inherit;border-radius:12px;transition:background .2s}
+  .note-item:hover{background:var(--card-soft)}
+  .note-list .note-item:last-child{border-bottom:none}
+  .note-title{font-size:.95rem;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .note-meta{font-size:.78rem;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .note-meta .note-date{color:var(--sage-deep);font-weight:600}
+  .field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 14px;
+    font-family:inherit;font-size:.95rem;background:#fff;color:var(--ink);resize:vertical;min-height:220px;line-height:1.55}
+  .field textarea:focus{outline:2px solid var(--sage);outline-offset:1px;border-color:var(--sage)}
 
   /* ── enhancements: cloud sync ────────────────── */
   .icon-btn{position:relative}
@@ -308,6 +347,11 @@
 
   <div class="stack">
 
+    <section class="card countdown" id="countdownCard">
+      <div id="countdownBody" aria-live="polite"></div>
+    </section>
+
+    <div class="grid-2">
     <section class="card hero">
       <p class="label">Current balance</p>
       <div class="balance" id="balanceEl"><span id="balanceNum">0</span><span class="cur">FCFA</span></div>
@@ -322,6 +366,7 @@
       <h2>Budget &amp; days</h2>
       <div id="budgetBody"></div>
     </section>
+    </div>
 
     <div class="grid-2">
       <section class="card" id="addCard">
@@ -355,6 +400,20 @@
       <section class="card" id="chartCard">
         <h2>Spending by category</h2>
         <div id="chartBody"></div>
+      </section>
+    </div>
+
+    <div class="grid-2">
+      <section class="card" id="plannedCard">
+        <h2>Planned expenses</h2>
+        <div id="plannedBody"></div>
+        <button type="button" class="btn btn-quiet card-add-btn" id="plannedAddBtn">🔮 Plan an expense</button>
+      </section>
+
+      <section class="card" id="notesCard">
+        <h2>Notes</h2>
+        <div id="notesBody"></div>
+        <button type="button" class="btn btn-quiet card-add-btn" id="noteAddBtn">📝 New note</button>
       </section>
     </div>
 
@@ -445,6 +504,51 @@
   </div>
 </dialog>
 
+<dialog id="plannedDialog">
+  <div class="dialog-body">
+    <h3 id="plannedDlgTitle">Plan an expense 🔮</h3>
+    <p class="dialog-sub">Something you're about to pay — it shapes your forecast without touching the balance yet.</p>
+    <div class="field">
+      <label for="plannedAmount">Amount (FCFA)</label>
+      <input id="plannedAmount" inputmode="numeric" autocomplete="off" placeholder="e.g. 25 000">
+      <div class="amount-preview" id="plannedAmountPreview"></div>
+    </div>
+    <div class="field">
+      <label for="plannedLabel">What for?</label>
+      <input id="plannedLabel" autocomplete="off" placeholder="Desert tour deposit…" maxlength="60">
+    </div>
+    <div class="field">
+      <label>Category</label>
+      <div class="cat-chips" id="plannedCatChips"></div>
+    </div>
+    <div class="field">
+      <label for="plannedDate">Expected date (optional)</label>
+      <input id="plannedDate" type="date">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-quiet" id="plannedCancel">Cancel</button>
+      <button class="btn btn-fund" id="plannedSave">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="noteDialog">
+  <div class="dialog-body">
+    <h3 id="noteDlgTitle">New note 📝</h3>
+    <p class="dialog-sub">The first line becomes the title — just like Apple Notes.</p>
+    <div class="field">
+      <textarea id="noteText" aria-label="Note text" placeholder="Packing list, riad address, door code…"></textarea>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-quiet" id="noteCancel">Cancel</button>
+      <button class="btn btn-fund" id="noteSave">Save</button>
+    </div>
+    <div class="danger-zone" id="noteDanger" hidden>
+      <button class="mini-btn danger" id="noteDelete">Delete note</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="syncDialog">
   <div class="dialog-body">
     <h3>Cloud sync ☁️</h3>
@@ -490,35 +594,47 @@
   "use strict";
   const KEY = "morocco-trip-v1";
   const CATS = {
+    voyage:      { emoji:"✈️", label:"Voyage" },
+    ecole:       { emoji:"🎓", label:"École" },
+    hebergement: { emoji:"🏨", label:"Hébergement" },
+    shopping:    { emoji:"🛍️", label:"Shopping" },
+  };
+  // old category keys still present in stored transactions keep rendering
+  const LEGACY_CATS = {
     food:       { emoji:"🍽️", label:"Food" },
     transport:  { emoji:"🚕", label:"Transport" },
     hotel:      { emoji:"🏨", label:"Hotel" },
-    shopping:   { emoji:"🛍️", label:"Shopping" },
     activities: { emoji:"🎡", label:"Activities" },
     other:      { emoji:"✨", label:"Other" },
   };
+  const catInfo = (k) => CATS[k] || LEGACY_CATS[k] || { emoji:"✨", label:"Other" };
   const $ = (id) => document.getElementById(id);
 
   // ── state ──────────────────────────────────────
   let state = load();
   let mode = "expense";           // current form mode
-  let selectedCat = "food";
+  let selectedCat = "voyage";
   let confirmTimer = null;
   let txFilter = { q: "", type: "all", cat: "all" };   // transient, never persisted
   let lastChangedId = null;       // row to flash on next renderTx
   let editingId = null;
   let editMode = "expense";
-  let editCat = "food";
+  let editCat = "voyage";
 
+  function normalize(s) {           // additive fields: older exports / cloud copies load fine
+    if (!Array.isArray(s.notes)) s.notes = [];
+    if (!Array.isArray(s.planned)) s.planned = [];
+    return s;
+  }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw);
-        if (s && Array.isArray(s.transactions) && s.settings) return s;
+        if (s && Array.isArray(s.transactions) && s.settings) return normalize(s);
       }
     } catch (e) { /* corrupted -> fresh start */ }
-    return { settings: { budget: 0, startDate: "", endDate: "", setupDone: false }, transactions: [] };
+    return normalize({ settings: { budget: 0, startDate: "", endDate: "", setupDone: false }, transactions: [] });
   }
   function save() {
     state.updatedAt = Date.now();          // additive field: lets devices agree on the newest version
@@ -678,7 +794,7 @@
     const max = entries[0][1];
     const total = entries.reduce((s, [, v]) => s + v, 0);
     body.innerHTML = '<div class="cat-rows">' + entries.map(([cat, v]) => {
-      const c = CATS[cat] || CATS.other;
+      const c = catInfo(cat);
       const pct = total ? Math.round((v / total) * 100) : 0;
       return `<div class="cat-row" title="${esc(c.label)}: ${esc(fmtFcfa(v))} (${pct}% of spending)">
         <span class="cat-name">${c.emoji} ${esc(c.label)}</span>
@@ -720,7 +836,7 @@
     }
     body.innerHTML = '<div class="tx-list">' + visible.map(t => {
       const isFund = t.type === "fund";
-      const c = isFund ? { emoji: "💰", label: "Funds" } : (CATS[t.category] || CATS.other);
+      const c = isFund ? { emoji: "💰", label: "Funds" } : catInfo(t.category);
       const label = t.label || (isFund ? "Funds added" : c.label);
       return `<div class="tx ${isFund ? "is-fund" : "is-expense"}${t.id === flashId ? " tx-new" : ""}">
         <span class="tx-emoji">${c.emoji}</span>
@@ -740,8 +856,87 @@
     $("datesChip").textContent = (startDate && endDate) ? `${fmtDay(startDate)} → ${fmtDay(endDate)}` : "no dates set";
   }
 
+  // ── render: countdown banner ───────────────────
+  function renderCountdown() {
+    const { startDate, endDate } = state.settings;
+    const body = $("countdownBody");
+    const today = todayISO();
+    let emoji, big, sub;
+    if (!startDate || !endDate || isoToUTC(endDate) < isoToUTC(startDate)) {
+      emoji = "🗓️"; big = "Set your trip dates";
+      sub = "open ⚙ settings to start the countdown";
+    } else if (today < startDate) {
+      const d = daysBetween(today, startDate);
+      emoji = "✈️"; big = `<span class="count-num">${d}</span> day${d === 1 ? "" : "s"} until Morocco`;
+      sub = `departure ${esc(fmtDay(startDate))} — pack the sunscreen 🧴`;
+    } else if (today > endDate) {
+      emoji = "🌅"; big = "Trip finished";
+      sub = `${esc(fmtDay(startDate))} → ${esc(fmtDay(endDate))} — hope it was magical`;
+    } else {
+      const tripLen = daysBetween(startDate, endDate) + 1;
+      const dayN = daysBetween(startDate, today) + 1;
+      const left = daysBetween(today, endDate);
+      emoji = "🐪"; big = `Day <span class="count-num">${dayN}</span> of ${tripLen}`;
+      sub = left === 0 ? "last day — soak it in 🌅" : `${left} day${left === 1 ? "" : "s"} left until ${esc(fmtDay(endDate))}`;
+    }
+    body.innerHTML = `<div class="count-wrap"><span class="count-emoji bob" aria-hidden="true">${emoji}</span>
+      <div><div class="count-big">${big}</div><div class="count-sub">${sub}</div></div></div>`;
+  }
+
+  // ── render: planned expenses ───────────────────
+  function renderPlanned() {
+    const body = $("plannedBody");
+    if (!state.planned.length) {
+      body.innerHTML = '<div class="empty">Nothing planned yet — add the expenses you see coming. <span class="bob">🔮</span></div>';
+      return;
+    }
+    const sorted = [...state.planned].sort((a, b) => {
+      const da = a.date || "9999", db = b.date || "9999";
+      return da === db ? a.created - b.created : (da > db ? 1 : -1);
+    });
+    const total = sorted.reduce((s, p) => s + p.amount, 0);
+    const after = totalIn() - totalOut() - total;
+    body.innerHTML = `<p class="planned-summary">Total planned <b>${esc(fmtFcfa(total))}</b> · balance after <b class="${after < 0 ? "neg" : ""}">${esc(fmtFcfa(after))}</b></p>` +
+      '<div class="tx-list">' + sorted.map(p => {
+        const c = catInfo(p.category);
+        const label = p.label || c.label;
+        return `<div class="tx is-planned">
+          <span class="tx-emoji">${c.emoji}</span>
+          <div class="tx-info">
+            <div class="tx-label">${esc(label)}</div>
+            <div class="tx-meta">${esc(c.label.toLowerCase())}${p.date ? " · " + esc(fmtDay(p.date)) : ""}</div>
+          </div>
+          <span class="tx-amount">−${esc(fmt(p.amount))}</span>
+          <button class="tx-pay" data-id="${esc(p.id)}" title="Mark as paid — moves it to expenses" aria-label="Mark ${esc(label)} as paid">✓</button>
+          <button class="tx-edit" data-id="${esc(p.id)}" aria-label="Edit ${esc(label)}">✎</button>
+          <button class="tx-del" data-id="${esc(p.id)}" aria-label="Delete ${esc(label)}">✕</button>
+        </div>`;
+      }).join("") + "</div>";
+  }
+
+  // ── render: notes ──────────────────────────────
+  function renderNotes() {
+    const body = $("notesBody");
+    if (!state.notes.length) {
+      body.innerHTML = '<div class="empty">No notes yet — packing list, addresses, riad codes… <span class="bob">📝</span></div>';
+      return;
+    }
+    const sorted = [...state.notes].sort((a, b) => (b.updated || b.created) - (a.updated || a.created));
+    body.innerHTML = '<div class="note-list">' + sorted.map(n => {
+      const lines = String(n.text || "").trim().split("\n");
+      const title = (lines[0] || "").trim() || "Untitled";
+      const preview = lines.slice(1).map(l => l.trim()).filter(Boolean)[0] || "";
+      const when = new Date(n.updated || n.created).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      return `<button type="button" class="note-item" data-id="${esc(n.id)}">
+        <div class="note-title">${esc(title)}</div>
+        <div class="note-meta"><span class="note-date">${esc(when)}</span>${preview ? " · " + esc(preview) : ""}</div>
+      </button>`;
+    }).join("") + "</div>";
+  }
+
   function render() {
     renderBalance(); renderBudget(); renderChart(); renderTx(); renderDatesChip();
+    renderCountdown(); renderPlanned(); renderNotes();
   }
 
   // ── form: mode & categories ────────────────────
@@ -894,7 +1089,7 @@
     if (!t) return;
     editingId = id;
     setEditMode(t.type);
-    editCat = t.category || "food";
+    editCat = t.category || "voyage";
     $("editCatChips").innerHTML = catChipsHTML(editCat);
     $("editAmount").value = fmt(t.amount);
     $("editAmountPreview").textContent = "= " + fmtFcfa(t.amount);
@@ -929,6 +1124,133 @@
     save(); render();
     editDlg.close();
     toast("Updated ✏️", "success");
+  });
+
+  // ── planned expenses (forecast) ────────────────
+  const plannedDlg = $("plannedDialog");
+  let plannedEditingId = null;
+  let plannedCat = "voyage";
+  let plannedConfirmTimer = null;
+
+  function openPlannedDialog(id) {
+    plannedEditingId = id || null;
+    const p = id ? state.planned.find(x => x.id === id) : null;
+    $("plannedDlgTitle").textContent = p ? "Edit planned expense 🔮" : "Plan an expense 🔮";
+    plannedCat = (p && p.category) || "voyage";
+    $("plannedCatChips").innerHTML = catChipsHTML(plannedCat);
+    $("plannedAmount").value = p ? fmt(p.amount) : "";
+    $("plannedAmountPreview").textContent = p ? "= " + fmtFcfa(p.amount) : "";
+    $("plannedLabel").value = p ? (p.label || "") : "";
+    $("plannedDate").value = p ? (p.date || "") : "";
+    plannedDlg.showModal();
+  }
+  $("plannedAddBtn").addEventListener("click", () => openPlannedDialog(null));
+  $("plannedCatChips").addEventListener("click", (e) => {
+    const btn = e.target.closest(".cat-chip");
+    if (!btn) return;
+    plannedCat = btn.dataset.cat;
+    for (const el of $("plannedCatChips").children) el.setAttribute("aria-pressed", el === btn);
+  });
+  $("plannedAmount").addEventListener("input", () => {
+    const n = parseAmount($("plannedAmount").value);
+    $("plannedAmountPreview").textContent = Number.isFinite(n) && n > 0 ? "= " + fmtFcfa(n) : "";
+  });
+  $("plannedCancel").addEventListener("click", () => plannedDlg.close());
+  $("plannedSave").addEventListener("click", () => {
+    const amount = parseAmount($("plannedAmount").value);
+    if (!Number.isFinite(amount) || amount <= 0) { toast("Enter a valid amount"); $("plannedAmount").focus(); return; }
+    const label = $("plannedLabel").value.trim(), date = $("plannedDate").value;
+    const p = plannedEditingId ? state.planned.find(x => x.id === plannedEditingId) : null;
+    if (p) {
+      p.amount = amount; p.label = label; p.category = plannedCat; p.date = date;
+    } else {
+      state.planned.push({ id: uid(), amount, label, category: plannedCat, date, created: Date.now() });
+    }
+    save(); renderPlanned();
+    plannedDlg.close();
+    toast(p ? "Plan updated ✏️" : "Expense planned 🔮", "success");
+  });
+  $("plannedBody").addEventListener("click", (e) => {
+    const pay = e.target.closest(".tx-pay");
+    if (pay) {
+      const p = state.planned.find(x => x.id === pay.dataset.id);
+      if (!p) return;
+      const tx = { id: uid(), type: "expense", amount: p.amount, label: p.label, category: p.category, date: todayISO(), created: Date.now() };
+      burst(pay, ["🧾", "✨", "🐪"]);
+      state.transactions.push(tx);
+      state.planned = state.planned.filter(x => x.id !== p.id);
+      lastChangedId = tx.id;
+      save(); render();
+      toast("Paid — moved to expenses ✓", "success");
+      return;
+    }
+    const editBtn = e.target.closest(".tx-edit");
+    if (editBtn) { openPlannedDialog(editBtn.dataset.id); return; }
+    const btn = e.target.closest(".tx-del");
+    if (!btn) return;
+    if (btn.classList.contains("confirm")) {
+      state.planned = state.planned.filter(x => x.id !== btn.dataset.id);
+      save(); renderPlanned();
+      toast("Removed", "danger");
+    } else {
+      document.querySelectorAll("#plannedBody .tx-del.confirm").forEach(b => { b.classList.remove("confirm"); b.textContent = "✕"; });
+      btn.classList.add("confirm");
+      btn.textContent = "Sure?";
+      clearTimeout(plannedConfirmTimer);
+      plannedConfirmTimer = setTimeout(() => { btn.classList.remove("confirm"); btn.textContent = "✕"; }, 2600);
+    }
+  });
+
+  // ── notes ──────────────────────────────────────
+  const noteDlg = $("noteDialog");
+  let noteEditingId = null;
+  let noteDeleteArmed = false;
+
+  function openNoteDialog(id) {
+    noteEditingId = id || null;
+    const n = id ? state.notes.find(x => x.id === id) : null;
+    $("noteDlgTitle").textContent = n ? "Edit note 📝" : "New note 📝";
+    $("noteText").value = n ? n.text : "";
+    $("noteDanger").hidden = !n;
+    noteDeleteArmed = false;
+    $("noteDelete").textContent = "Delete note";
+    noteDlg.showModal();
+    if (!n) $("noteText").focus();
+  }
+  $("noteAddBtn").addEventListener("click", () => openNoteDialog(null));
+  $("notesBody").addEventListener("click", (e) => {
+    const item = e.target.closest(".note-item");
+    if (item) openNoteDialog(item.dataset.id);
+  });
+  $("noteCancel").addEventListener("click", () => noteDlg.close());
+  $("noteSave").addEventListener("click", () => {
+    const text = $("noteText").value;
+    const n = noteEditingId ? state.notes.find(x => x.id === noteEditingId) : null;
+    if (!text.trim()) {           // Apple Notes style: an emptied note disappears
+      if (n) { state.notes = state.notes.filter(x => x.id !== n.id); save(); renderNotes(); toast("Empty note deleted", "danger"); }
+      noteDlg.close();
+      return;
+    }
+    if (n) {
+      if (text !== n.text) { n.text = text; n.updated = Date.now(); }
+    } else {
+      state.notes.push({ id: uid(), text, created: Date.now(), updated: Date.now() });
+    }
+    save(); renderNotes();
+    noteDlg.close();
+    toast("Note saved 📝", "success");
+  });
+  $("noteDelete").addEventListener("click", () => {
+    if (!noteDeleteArmed) {
+      noteDeleteArmed = true;
+      $("noteDelete").textContent = "Really delete?";
+      setTimeout(() => { noteDeleteArmed = false; $("noteDelete").textContent = "Delete note"; }, 2600);
+      return;
+    }
+    state.notes = state.notes.filter(x => x.id !== noteEditingId);
+    save(); renderNotes();
+    noteDlg.close();
+    toast("Note deleted", "danger");
   });
 
   // ── emoji confetti ─────────────────────────────
@@ -1018,7 +1340,7 @@
       try {
         const s = JSON.parse(reader.result);
         if (!s || !Array.isArray(s.transactions) || !s.settings) throw new Error("bad shape");
-        state = s;
+        state = normalize(s);
         save(); render();
         dlg.close();
         toast("Data imported ✓");
@@ -1035,7 +1357,7 @@
       setTimeout(() => { resetArmed = false; $("resetBtn").textContent = "Reset all data"; }, 3200);
       return;
     }
-    state = { settings: { budget: 0, startDate: "", endDate: "", setupDone: false }, transactions: [] };
+    state = normalize({ settings: { budget: 0, startDate: "", endDate: "", setupDone: false }, transactions: [] });
     save(); render();
     dlg.close();
     toast("Fresh start 🌱");
@@ -1150,7 +1472,7 @@
       const remote = await pullRemote();
       const valid = remote && Array.isArray(remote.transactions) && remote.settings;
       if (valid && (remote.updatedAt || 0) > (state.updatedAt || 0)) {
-        state = remote;
+        state = normalize(remote);
         localStorage.setItem(KEY, JSON.stringify(state));  // raw write: don't bump updatedAt
         render();
         if (state.settings.setupDone && dlg.open && dlgMode === "setup") dlg.close();
