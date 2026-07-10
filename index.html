@@ -265,6 +265,7 @@
   .count-big{font-size:1.35rem;font-weight:650;line-height:1.2}
   .count-num{font-size:1.9rem;font-variant-numeric:tabular-nums;color:var(--sage-deep)}
   .count-sub{font-size:.88rem;color:var(--ink-2);margin-top:2px}
+  .count-meter{max-width:560px;margin:18px auto 0}
 
   /* ── planned expenses ────────────────────────── */
   .planned-summary{font-size:.85rem;color:var(--ink-2);margin-bottom:10px;line-height:1.5}
@@ -861,7 +862,7 @@
     const { startDate, endDate } = state.settings;
     const body = $("countdownBody");
     const today = todayISO();
-    let emoji, big, sub;
+    let emoji, big, sub, pct = null;
     if (!startDate || !endDate || isoToUTC(endDate) < isoToUTC(startDate)) {
       emoji = "🗓️"; big = "Set your trip dates";
       sub = "open ⚙ settings to start the countdown";
@@ -869,18 +870,29 @@
       const d = daysBetween(today, startDate);
       emoji = "✈️"; big = `<span class="count-num">${d}</span> day${d === 1 ? "" : "s"} until Morocco`;
       sub = `departure ${esc(fmtDay(startDate))} — pack the sunscreen 🧴`;
+      // anchor the wait on the day the countdown first appeared (persisted on the next save)
+      if (!state.settings.countdownStart || state.settings.countdownStart > startDate) state.settings.countdownStart = today;
+      const wait = daysBetween(state.settings.countdownStart, startDate);
+      pct = wait > 0 ? Math.min(100, Math.max(0, (daysBetween(state.settings.countdownStart, today) / wait) * 100)) : 100;
     } else if (today > endDate) {
       emoji = "🌅"; big = "Trip finished";
       sub = `${esc(fmtDay(startDate))} → ${esc(fmtDay(endDate))} — hope it was magical`;
+      pct = 100;
     } else {
       const tripLen = daysBetween(startDate, endDate) + 1;
       const dayN = daysBetween(startDate, today) + 1;
       const left = daysBetween(today, endDate);
       emoji = "🐪"; big = `Day <span class="count-num">${dayN}</span> of ${tripLen}`;
       sub = left === 0 ? "last day — soak it in 🌅" : `${left} day${left === 1 ? "" : "s"} left until ${esc(fmtDay(endDate))}`;
+      pct = (dayN / tripLen) * 100;
     }
+    const bar = pct === null ? "" :
+      `<div class="meter count-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" aria-label="Countdown progress">
+        <div class="meter-fill" style="width:0" data-w="${pct}"><span class="meter-walker" aria-hidden="true">🐪</span></div>
+      </div>`;
     body.innerHTML = `<div class="count-wrap"><span class="count-emoji bob" aria-hidden="true">${emoji}</span>
-      <div><div class="count-big">${big}</div><div class="count-sub">${sub}</div></div></div>`;
+      <div><div class="count-big">${big}</div><div class="count-sub">${sub}</div></div></div>` + bar;
+    growWidths(body);
   }
 
   // ── render: planned expenses ───────────────────
@@ -1303,6 +1315,7 @@
     const sd = $("startDateInput").value, ed = $("endDateInput").value;
     if (sd && ed && ed < sd) { toast("End date is before start date"); return; }
     state.settings.budget = Number.isFinite(budget) ? budget : 0;
+    if (sd && sd !== state.settings.startDate) state.settings.countdownStart = todayISO();
     state.settings.startDate = sd;
     state.settings.endDate = ed;
     state.settings.setupDone = true;
