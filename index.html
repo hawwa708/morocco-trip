@@ -284,13 +284,30 @@
 
   /* ── notes ───────────────────────────────────── */
   .note-list{display:flex;flex-direction:column}
-  .note-item{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);
-    background:transparent;padding:12px 6px;cursor:pointer;font-family:inherit;border-radius:12px;transition:background .2s}
-  .note-item:hover{background:var(--card-soft)}
+  .note-item{border-bottom:1px solid var(--line)}
   .note-list .note-item:last-child{border-bottom:none}
+  .note-open{display:block;width:100%;text-align:left;border:none;
+    background:transparent;padding:12px 6px 8px;cursor:pointer;font-family:inherit;border-radius:12px;transition:background .2s}
+  .note-open:hover{background:var(--card-soft)}
+  .note-open:focus-visible{outline:2px solid var(--sage);outline-offset:1px}
   .note-title{font-size:.95rem;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .note-meta{font-size:.78rem;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .note-meta .note-date{color:var(--sage-deep);font-weight:600}
+  .note-meta .note-count{color:var(--terracotta-deep);font-weight:600}
+  /* checklist items inside a note */
+  .note-checks{display:flex;flex-direction:column;padding:0 6px 8px}
+  .note-check{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:none;
+    background:transparent;font-family:inherit;font-size:.9rem;color:var(--ink);
+    padding:5px 6px;cursor:pointer;border-radius:9px;transition:background .15s}
+  .note-check:hover{background:var(--card-soft)}
+  .note-check:focus-visible{outline:2px solid var(--sage);outline-offset:1px}
+  .note-check .cbox{flex:none;width:19px;height:19px;border-radius:6px;border:2px solid var(--sage);
+    display:flex;align-items:center;justify-content:center;font-size:.72rem;color:#fff;line-height:1;
+    background:transparent;transition:background .15s,transform .15s}
+  .note-check.done .cbox{background:var(--sage)}
+  .note-check.done .clabel{text-decoration:line-through;color:var(--ink-3)}
+  .note-check:active .cbox{transform:scale(.85)}
+  .note-tools{display:flex;justify-content:flex-end;margin-top:8px}
   .field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 14px;
     font-family:inherit;font-size:.95rem;background:#fff;color:var(--ink);resize:vertical;min-height:220px;line-height:1.55}
   .field textarea:focus{outline:2px solid var(--sage);outline-offset:1px;border-color:var(--sage)}
@@ -536,9 +553,12 @@
 <dialog id="noteDialog">
   <div class="dialog-body">
     <h3 id="noteDlgTitle">New note 📝</h3>
-    <p class="dialog-sub">The first line becomes the title — just like Apple Notes.</p>
+    <p class="dialog-sub">The first line becomes the title — just like Apple Notes. Add checklist items to tick them off.</p>
     <div class="field">
-      <textarea id="noteText" aria-label="Note text" placeholder="Packing list, riad address, door code…"></textarea>
+      <textarea id="noteText" aria-label="Note text" placeholder="Packing list, riad address, door code…&#10;- [ ] Passport&#10;- [ ] Sunscreen"></textarea>
+      <div class="note-tools">
+        <button type="button" class="mini-btn" id="noteChecklistBtn">☑︎ Checklist item</button>
+      </div>
     </div>
     <div class="dialog-actions">
       <button class="btn btn-quiet" id="noteCancel">Cancel</button>
@@ -664,6 +684,8 @@
   };
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2));
   const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  // a checklist line: optional "- " bullet, then [ ] or [x], then the label
+  const CHECK_RE = /^\s*(?:[-*]\s+)?\[([ xX])\]\s?(.*)$/;
   const motionOK = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // grow bars/meters from 0 so their width transition actually plays
@@ -935,14 +957,35 @@
     }
     const sorted = [...state.notes].sort((a, b) => (b.updated || b.created) - (a.updated || a.created));
     body.innerHTML = '<div class="note-list">' + sorted.map(n => {
-      const lines = String(n.text || "").trim().split("\n");
-      const title = (lines[0] || "").trim() || "Untitled";
-      const preview = lines.slice(1).map(l => l.trim()).filter(Boolean)[0] || "";
+      const lines = String(n.text || "").split("\n");
+      // checklist rows (keep original line index so a tick can find its line)
+      const checks = lines.map((l, i) => {
+        const m = l.match(CHECK_RE);
+        return m ? { i, done: m[1] !== " ", label: m[2].trim() } : null;
+      }).filter(Boolean);
+      // title & preview come from the text (non-checklist) lines
+      const textLines = lines.map(l => l.trim()).filter(l => l && !CHECK_RE.test(l));
+      const title = textLines[0] || (checks.length ? "Checklist" : "Untitled");
+      const preview = textLines[1] || "";
       const when = new Date(n.updated || n.created).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-      return `<button type="button" class="note-item" data-id="${esc(n.id)}">
-        <div class="note-title">${esc(title)}</div>
-        <div class="note-meta"><span class="note-date">${esc(when)}</span>${preview ? " · " + esc(preview) : ""}</div>
-      </button>`;
+      const done = checks.filter(c => c.done).length;
+      const count = checks.length ? `<span class="note-count">☑︎ ${done}/${checks.length}</span>` : "";
+      const meta = [`<span class="note-date">${esc(when)}</span>`, count, preview ? esc(preview) : ""]
+        .filter(Boolean).join(" · ");
+      const rows = checks.length
+        ? '<div class="note-checks">' + checks.map(c =>
+            `<button type="button" class="note-check${c.done ? " done" : ""}" role="checkbox" aria-checked="${c.done}"
+              data-id="${esc(n.id)}" data-line="${c.i}">
+              <span class="cbox" aria-hidden="true">${c.done ? "✓" : ""}</span>
+              <span class="clabel">${esc(c.label) || "&nbsp;"}</span>
+            </button>`).join("") + "</div>"
+        : "";
+      return `<div class="note-item" data-id="${esc(n.id)}">
+        <button type="button" class="note-open" data-id="${esc(n.id)}">
+          <div class="note-title">${esc(title)}</div>
+          <div class="note-meta">${meta}</div>
+        </button>${rows}
+      </div>`;
     }).join("") + "</div>";
   }
 
@@ -1231,8 +1274,47 @@
   }
   $("noteAddBtn").addEventListener("click", () => openNoteDialog(null));
   $("notesBody").addEventListener("click", (e) => {
-    const item = e.target.closest(".note-item");
+    const check = e.target.closest(".note-check");
+    if (check) { toggleCheck(check.dataset.id, +check.dataset.line); return; }
+    const item = e.target.closest(".note-open");
     if (item) openNoteDialog(item.dataset.id);
+  });
+
+  // tick a checklist item straight from the card
+  function toggleCheck(id, line) {
+    const n = state.notes.find(x => x.id === id);
+    if (!n) return;
+    const lines = String(n.text || "").split("\n");
+    const m = (lines[line] || "").match(CHECK_RE);
+    if (!m) return;
+    const nowUnchecked = m[1] === " ";
+    lines[line] = lines[line].replace(/\[[ xX]\]/, nowUnchecked ? "[x]" : "[ ]");
+    n.text = lines.join("\n");
+    n.updated = Date.now();
+    save();
+    // did that just complete the whole checklist? celebrate 🎉
+    const items = lines.filter(l => CHECK_RE.test(l));
+    const allDone = items.length > 0 && items.every(l => !/\[ \]/.test(l));
+    renderNotes();
+    if (nowUnchecked && allDone) {
+      const el = $("notesBody").querySelector(`.note-item[data-id="${CSS.escape(id)}"]`);
+      burst(el, ["✅", "🎉", "🌟", "🐫"]);
+      toast("Checklist complete! 🎉", "success");
+    }
+  }
+
+  // insert a fresh checklist item at the caret
+  $("noteChecklistBtn").addEventListener("click", () => {
+    const ta = $("noteText");
+    const val = ta.value;
+    const pos = ta.selectionStart != null ? ta.selectionStart : val.length;
+    const before = val.slice(0, pos);
+    const prefix = (before.length && !before.endsWith("\n")) ? "\n" : "";
+    const insert = prefix + "- [ ] ";
+    ta.value = before + insert + val.slice(pos);
+    const caret = before.length + insert.length;
+    ta.focus();
+    ta.setSelectionRange(caret, caret);
   });
   $("noteCancel").addEventListener("click", () => noteDlg.close());
   $("noteSave").addEventListener("click", () => {
