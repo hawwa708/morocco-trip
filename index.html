@@ -311,6 +311,21 @@
   .field textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 14px;
     font-family:inherit;font-size:.95rem;background:#fff;color:var(--ink);resize:vertical;min-height:220px;line-height:1.55}
   .field textarea:focus{outline:2px solid var(--sage);outline-offset:1px;border-color:var(--sage)}
+  /* Apple-Notes-style note editor (contenteditable) */
+  .note-editor{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 14px;
+    font-family:inherit;font-size:.95rem;background:#fff;color:var(--ink);min-height:220px;max-height:52vh;
+    overflow-y:auto;line-height:1.55;white-space:pre-wrap;word-break:break-word;position:relative}
+  .note-editor:focus{outline:2px solid var(--sage);outline-offset:1px;border-color:var(--sage)}
+  .note-editor>div{min-height:1.55em}
+  .note-editor[data-empty="1"]::before{content:attr(data-ph);position:absolute;top:11px;left:14px;
+    color:var(--ink-3);pointer-events:none}
+  .note-editor .ck{position:relative;padding-left:32px}
+  .note-editor .ck::before{content:"";position:absolute;left:0;top:.05em;width:23px;height:23px;box-sizing:border-box;
+    border-radius:50%;border:2px solid #c8c0b2;background:transparent;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:700;color:#fff;line-height:1;
+    transition:background .15s,border-color .15s}
+  .note-editor .ck[data-done="1"]::before{content:"✓";background:#40c463;border-color:#40c463}
+  .note-editor .ck[data-done="1"]{text-decoration:line-through;color:var(--ink-3)}
 
   /* ── enhancements: cloud sync ────────────────── */
   .icon-btn{position:relative}
@@ -553,9 +568,10 @@
 <dialog id="noteDialog">
   <div class="dialog-body">
     <h3 id="noteDlgTitle">New note 📝</h3>
-    <p class="dialog-sub">The first line becomes the title — just like Apple Notes. Add checklist items to tick them off.</p>
+    <p class="dialog-sub">The first line becomes the title — just like Apple Notes. Tap ☑︎ to add tickable items.</p>
     <div class="field">
-      <textarea id="noteText" aria-label="Note text" placeholder="Packing list, riad address, door code…&#10;- [ ] Passport&#10;- [ ] Sunscreen"></textarea>
+      <div id="noteEditor" class="note-editor" contenteditable="true" role="textbox" aria-multiline="true"
+        aria-label="Note text" data-ph="Packing list, riad address, door code…"></div>
       <div class="note-tools">
         <button type="button" class="mini-btn" id="noteChecklistBtn">☑︎ Checklist item</button>
       </div>
@@ -1258,19 +1274,73 @@
 
   // ── notes ──────────────────────────────────────
   const noteDlg = $("noteDialog");
+  const noteEd = $("noteEditor");
   let noteEditingId = null;
   let noteDeleteArmed = false;
+
+  // ── note editor: stored "- [ ] " text <-> contenteditable blocks ──
+  function loadNoteEditor(text) {
+    noteEd.innerHTML = "";
+    const lines = String(text || "").split("\n");
+    lines.forEach(line => {
+      const div = document.createElement("div");
+      const m = line.match(CHECK_RE);
+      if (m) {
+        div.className = "ck";
+        div.dataset.done = m[1] === " " ? "0" : "1";
+        div.textContent = m[2];
+      } else {
+        div.textContent = line;
+      }
+      if (!div.textContent) div.appendChild(document.createElement("br"));
+      noteEd.appendChild(div);
+    });
+    if (!noteEd.firstChild) noteEd.appendChild(document.createElement("div"));
+    updateNotePlaceholder();
+  }
+  function serializeNoteEditor() {
+    const out = [];
+    noteEd.querySelectorAll(":scope > div").forEach(div => {
+      const text = div.textContent.replace(/\xa0/g, " ");
+      if (div.classList.contains("ck")) {
+        out.push(("- [" + (div.dataset.done === "1" ? "x" : " ") + "] " + text).replace(/\s+$/, ""));
+      } else {
+        out.push(text);
+      }
+    });
+    return out.join("\n").replace(/\n+$/, "");
+  }
+  function updateNotePlaceholder() {
+    noteEd.dataset.empty = serializeNoteEditor().trim() ? "0" : "1";
+  }
+  // the direct child <div> of the editor holding the caret
+  function currentLineDiv() {
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode) return null;
+    let node = sel.anchorNode;
+    if (node === noteEd) return noteEd.children[Math.min(sel.anchorOffset, noteEd.children.length - 1)] || null;
+    while (node && node.parentNode !== noteEd) node = node.parentNode;
+    return node && node.parentNode === noteEd ? node : null;
+  }
+  function placeCaret(div) {
+    const range = document.createRange();
+    range.selectNodeContents(div);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
 
   function openNoteDialog(id) {
     noteEditingId = id || null;
     const n = id ? state.notes.find(x => x.id === id) : null;
     $("noteDlgTitle").textContent = n ? "Edit note 📝" : "New note 📝";
-    $("noteText").value = n ? n.text : "";
+    loadNoteEditor(n ? n.text : "");
     $("noteDanger").hidden = !n;
     noteDeleteArmed = false;
     $("noteDelete").textContent = "Delete note";
     noteDlg.showModal();
-    if (!n) $("noteText").focus();
+    if (!n) { noteEd.focus(); placeCaret(noteEd.firstChild); }
   }
   $("noteAddBtn").addEventListener("click", () => openNoteDialog(null));
   $("notesBody").addEventListener("click", (e) => {
@@ -1303,22 +1373,64 @@
     }
   }
 
-  // insert a fresh checklist item at the caret
+  // turn a line into a checklist item (make an empty <div> holdable)
+  function makeCheck(div) {
+    div.classList.add("ck");
+    div.dataset.done = "0";
+    if (!div.textContent && !div.querySelector("br")) div.appendChild(document.createElement("br"));
+  }
+  // ☑︎ button: toggle the caret line into / out of a checklist item
   $("noteChecklistBtn").addEventListener("click", () => {
-    const ta = $("noteText");
-    const val = ta.value;
-    const pos = ta.selectionStart != null ? ta.selectionStart : val.length;
-    const before = val.slice(0, pos);
-    const prefix = (before.length && !before.endsWith("\n")) ? "\n" : "";
-    const insert = prefix + "- [ ] ";
-    ta.value = before + insert + val.slice(pos);
-    const caret = before.length + insert.length;
-    ta.focus();
-    ta.setSelectionRange(caret, caret);
+    noteEd.focus();
+    let line = currentLineDiv();
+    if (!line) {                                   // caret not in editor — append a fresh item
+      line = document.createElement("div");
+      line.appendChild(document.createElement("br"));
+      noteEd.appendChild(line);
+    }
+    if (line.classList.contains("ck")) { line.classList.remove("ck"); delete line.dataset.done; }
+    else { makeCheck(line); }
+    placeCaret(line);
+    updateNotePlaceholder();
+  });
+  // click the circle gutter to tick an item, right in the editor
+  noteEd.addEventListener("click", (e) => {
+    const line = e.target.closest(".ck");
+    if (!line || !noteEd.contains(line)) return;
+    if (e.clientX - line.getBoundingClientRect().left <= 32) {
+      line.dataset.done = line.dataset.done === "1" ? "0" : "1";
+      updateNotePlaceholder();
+    }
+  });
+  // Enter continues a checklist; empty item + Enter ends the list (Apple Notes)
+  noteEd.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const line = currentLineDiv();
+    if (!line || !line.classList.contains("ck")) return;   // plain lines keep native Enter
+    e.preventDefault();
+    if (!line.textContent.trim()) {                         // empty item → drop the checkbox
+      line.classList.remove("ck");
+      delete line.dataset.done;
+      return;
+    }
+    const nd = document.createElement("div");
+    makeCheck(nd);
+    line.after(nd);
+    placeCaret(nd);
+  });
+  // keep placeholder in sync + autoformat "- [ ] " / "[] " typed at line start
+  noteEd.addEventListener("input", () => {
+    const line = currentLineDiv();
+    if (line && !line.classList.contains("ck")) {
+      const t = line.textContent;
+      const mm = t.match(/^(?:- )?\[ ?\]\s(.*)$/);
+      if (mm) { line.textContent = mm[1]; makeCheck(line); placeCaret(line); }
+    }
+    updateNotePlaceholder();
   });
   $("noteCancel").addEventListener("click", () => noteDlg.close());
   $("noteSave").addEventListener("click", () => {
-    const text = $("noteText").value;
+    const text = serializeNoteEditor();
     const n = noteEditingId ? state.notes.find(x => x.id === noteEditingId) : null;
     if (!text.trim()) {           // Apple Notes style: an emptied note disappears
       if (n) { state.notes = state.notes.filter(x => x.id !== n.id); save(); renderNotes(); toast("Empty note deleted", "danger"); }
