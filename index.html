@@ -1383,6 +1383,9 @@
     if (!div.textContent && !div.querySelector("br")) div.appendChild(document.createElement("br"));
   }
   // ☑︎ button: toggle the caret line into / out of a checklist item
+  // mousedown would steal focus from the editor and drop the caret back to
+  // line 1 — keep the selection where it is
+  $("noteChecklistBtn").addEventListener("mousedown", (e) => e.preventDefault());
   $("noteChecklistBtn").addEventListener("click", () => {
     noteEd.focus();
     let line = currentLineDiv();
