@@ -339,22 +339,26 @@
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
   .cal-wd{font-size:.68rem;font-weight:600;color:var(--ink-3);text-transform:uppercase;
     letter-spacing:.08em;text-align:center;padding:2px 0}
-  .cal-day{min-height:64px;border:1px solid var(--line);border-radius:14px;background:#fff;
-    font-family:inherit;color:var(--ink);cursor:pointer;padding:7px 4px 5px;
-    display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .15s, box-shadow .15s}
+  .cal-day{min-height:78px;border:1px solid var(--line);border-radius:14px;background:#fff;
+    font-family:inherit;color:var(--ink);cursor:pointer;padding:6px 6px 5px;text-align:left;
+    display:flex;flex-direction:column;align-items:stretch;gap:3px;overflow:hidden;
+    transition:transform .15s, box-shadow .15s}
   .cal-day:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
   .cal-day.pad{visibility:hidden}
   .cal-num{font-size:.85rem;font-weight:600;line-height:1.2}
   .cal-day.in-trip{background:var(--sage-mist);border-color:var(--sage-soft)}
   .cal-day.today{border:2px solid var(--sage)}
   .cal-day.sel{background:var(--sage-soft);border-color:var(--sage)}
-  .cal-sub{display:flex;flex-wrap:wrap;gap:2px 5px;justify-content:center;font-size:.68rem;
-    font-weight:600;line-height:1.2}
+  .cal-sub{display:flex;flex-wrap:wrap;gap:2px 5px;font-size:.68rem;font-weight:600;line-height:1.2}
   .cal-out{color:var(--terracotta-deep)}
   .cal-in{color:var(--sage-deep)}
+  .cal-chip{display:block;font-size:.66rem;font-weight:600;line-height:1.3;padding:2px 6px;
+    border-radius:7px;background:var(--sage-soft);color:var(--sage-deep);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal-chip.done{text-decoration:line-through;opacity:.55}
+  .cal-chip.more{background:transparent;color:var(--ink-3);padding:0 6px}
   .cal-detail-title{font-size:.85rem;font-weight:600;color:var(--ink-2);margin:16px 0 2px}
   .cal-hint{text-align:center;font-size:.82rem;color:var(--ink-3);margin-top:12px}
-  .cal-todo-count{color:var(--sage-deep)}
   .cal-todos{display:flex;flex-direction:column;margin-top:6px}
   .cal-todo-row{display:flex;align-items:center;gap:4px}
   .cal-todo-row .note-check{flex:1}
@@ -368,8 +372,9 @@
   .cal-todo-form input:focus{outline:2px solid var(--sage);outline-offset:1px;border-color:var(--sage)}
   @media (max-width:720px){
     .cal-grid{gap:4px}
-    .cal-day{min-height:50px;border-radius:10px;padding:5px 2px 4px}
+    .cal-day{min-height:60px;border-radius:10px;padding:4px 3px 3px;gap:2px}
     .cal-sub{font-size:.58rem}
+    .cal-chip{font-size:.55rem;padding:1px 4px;border-radius:5px}
   }
 
   /* ── enhancements: cloud sync ────────────────── */
@@ -1078,13 +1083,17 @@
 
     // this month's activity, day by day
     const days = {};
-    const at = (iso) => days[iso] || (days[iso] = { out: 0, inn: 0, plan: 0, td: 0, tdDone: 0 });
+    const at = (iso) => days[iso] || (days[iso] = { out: 0, inn: 0, plan: 0, td: 0, tdDone: 0, list: [] });
     for (const t of state.transactions) {
       if (!t.date || !t.date.startsWith(calMonth)) continue;
       if (t.type === "expense") at(t.date).out += t.amount; else at(t.date).inn += t.amount;
     }
     for (const p of state.planned) if (p.date && p.date.startsWith(calMonth)) at(p.date).plan++;
-    for (const td of state.todos) if (td.date && td.date.startsWith(calMonth)) { const o = at(td.date); o.td++; if (td.done) o.tdDone++; }
+    for (const td of [...state.todos].sort((a, b) => a.created - b.created)) {
+      if (!td.date || !td.date.startsWith(calMonth)) continue;
+      const o = at(td.date); o.td++; if (td.done) o.tdDone++;
+      o.list.push(td);
+    }
 
     const { startDate, endDate } = state.settings;
     const tripOK = startDate && endDate && isoToUTC(endDate) >= isoToUTC(startDate);
@@ -1103,15 +1112,20 @@
       if (iso === today) cls.push("today");
       if (iso === calSelected) cls.push("sel");
       const mark = iso === startDate ? " ✈️" : iso === endDate ? " 🌅" : "";
-      let sub = "", aria = fmtDay(iso);
+      let sub = "", chips = "", aria = fmtDay(iso);
       if (info) {
         if (info.out) { sub += `<span class="cal-out">−${fmtK(info.out)}</span>`; aria += `, spent ${fmt(info.out)} FCFA`; }
         if (info.inn) { sub += `<span class="cal-in">+${fmtK(info.inn)}</span>`; aria += `, added ${fmt(info.inn)} FCFA`; }
         if (info.plan) { sub += '<span aria-hidden="true">🔮</span>'; aria += `, ${info.plan} planned`; }
-        if (info.td) { sub += `<span class="cal-todo-count">☑︎ ${info.tdDone}/${info.td}</span>`; aria += `, ${info.tdDone} of ${info.td} to-dos done`; }
+        if (info.td) aria += `, ${info.tdDone} of ${info.td} to-dos done`;
+        // the to-dos themselves, Google-Calendar style (first 3, then "+n")
+        const MAXCHIP = 3;
+        chips = info.list.slice(0, MAXCHIP).map(t =>
+          `<span class="cal-chip${t.done ? " done" : ""}">${t.done ? "✓ " : ""}${esc(t.text)}</span>`).join("");
+        if (info.list.length > MAXCHIP) chips += `<span class="cal-chip more">+${info.list.length - MAXCHIP} more</span>`;
       }
       cells += `<button type="button" class="${cls.join(" ")}" data-iso="${iso}" aria-pressed="${iso === calSelected}" aria-label="${esc(aria)}">
-        <span class="cal-num">${d}${mark}</span><span class="cal-sub">${sub}</span></button>`;
+        <span class="cal-num">${d}${mark}</span>${sub ? `<span class="cal-sub">${sub}</span>` : ""}${chips}</button>`;
     }
     // a full render() can rebuild us mid-typing — carry the to-do draft across
     const prevInput = $("calTodoInput");
