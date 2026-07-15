@@ -259,7 +259,8 @@
   body.loaded #chartCard{animation-delay:.26s}
   body.loaded #plannedCard{animation-delay:.32s}
   body.loaded #notesCard{animation-delay:.38s}
-  body.loaded #txCard{animation-delay:.44s}
+  body.loaded #calCard{animation-delay:.44s}
+  body.loaded #txCard{animation-delay:.50s}
 
   /* ── countdown banner ────────────────────────── */
   .countdown{padding:20px 26px;background:linear-gradient(120deg,#fffdf6 0%,#fdf3df 70%,#f9ecd4 100%)}
@@ -329,6 +330,34 @@
     transition:background .15s,border-color .15s}
   .note-editor .ck[data-done="1"]::before{content:"✓";background:#40c463;border-color:#40c463}
   .note-editor .ck[data-done="1"]{text-decoration:line-through;color:var(--ink-3)}
+
+  /* ── calendar ────────────────────────────────── */
+  .cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .cal-nav .icon-btn{box-shadow:none;background:var(--card-soft);font-size:1.15rem;line-height:1}
+  .cal-title{font-weight:650;font-size:1.02rem;min-width:9.5em;text-align:center}
+  .cal-nav .mini-btn{margin-left:auto}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal-wd{font-size:.68rem;font-weight:600;color:var(--ink-3);text-transform:uppercase;
+    letter-spacing:.08em;text-align:center;padding:2px 0}
+  .cal-day{min-height:64px;border:1px solid var(--line);border-radius:14px;background:#fff;
+    font-family:inherit;color:var(--ink);cursor:pointer;padding:7px 4px 5px;
+    display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .15s, box-shadow .15s}
+  .cal-day:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .cal-day.pad{visibility:hidden}
+  .cal-num{font-size:.85rem;font-weight:600;line-height:1.2}
+  .cal-day.in-trip{background:var(--sage-mist);border-color:var(--sage-soft)}
+  .cal-day.today{border:2px solid var(--sage)}
+  .cal-day.sel{background:var(--sage-soft);border-color:var(--sage)}
+  .cal-sub{display:flex;flex-wrap:wrap;gap:2px 5px;justify-content:center;font-size:.68rem;
+    font-weight:600;line-height:1.2}
+  .cal-out{color:var(--terracotta-deep)}
+  .cal-in{color:var(--sage-deep)}
+  .cal-detail-title{font-size:.85rem;font-weight:600;color:var(--ink-2);margin:16px 0 2px}
+  @media (max-width:720px){
+    .cal-grid{gap:4px}
+    .cal-day{min-height:50px;border-radius:10px;padding:5px 2px 4px}
+    .cal-sub{font-size:.58rem}
+  }
 
   /* ── enhancements: cloud sync ────────────────── */
   .icon-btn{position:relative}
@@ -452,6 +481,17 @@
         <button type="button" class="btn btn-quiet card-add-btn" id="noteAddBtn">📝 New note</button>
       </section>
     </div>
+
+    <section class="card" id="calCard">
+      <h2>Calendar</h2>
+      <div class="cal-nav">
+        <button type="button" class="icon-btn" id="calPrev" aria-label="Previous month">‹</button>
+        <span class="cal-title" id="calTitle" aria-live="polite"></span>
+        <button type="button" class="icon-btn" id="calNext" aria-label="Next month">›</button>
+        <button type="button" class="mini-btn" id="calTodayBtn">📍 Today</button>
+      </div>
+      <div id="calBody"></div>
+    </section>
 
     <section class="card" id="txCard">
       <h2>Transactions</h2>
@@ -1008,9 +1048,107 @@
     }).join("") + "</div>";
   }
 
+  // ── render: calendar ───────────────────────────
+  let calMonth = todayISO().slice(0, 7);   // "YYYY-MM" being shown (transient, never persisted)
+  let calSelected = null;                  // tapped day (ISO) — its entries list below the grid
+
+  // compact amounts for the small day cells: 1 500 → 1,5k · 250 000 → 250k · 2 000 000 → 2M
+  const fmtK = (n) => n >= 1e6 ? (Math.round(n / 1e5) / 10).toLocaleString("fr-FR") + "M"
+    : n >= 1000 ? (n >= 100000 ? Math.round(n / 1000) : Math.round(n / 100) / 10).toLocaleString("fr-FR") + "k"
+    : String(n);
+
+  function renderCalendar() {
+    const [y, m] = calMonth.split("-").map(Number);
+    $("calTitle").textContent = new Date(Date.UTC(y, m - 1, 1))
+      .toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+
+    // this month's activity, day by day
+    const days = {};
+    const at = (iso) => days[iso] || (days[iso] = { out: 0, inn: 0, plan: 0 });
+    for (const t of state.transactions) {
+      if (!t.date || !t.date.startsWith(calMonth)) continue;
+      if (t.type === "expense") at(t.date).out += t.amount; else at(t.date).inn += t.amount;
+    }
+    for (const p of state.planned) if (p.date && p.date.startsWith(calMonth)) at(p.date).plan++;
+
+    const { startDate, endDate } = state.settings;
+    const tripOK = startDate && endDate && isoToUTC(endDate) >= isoToUTC(startDate);
+    const today = todayISO();
+    const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;   // Monday-first
+    const count = new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+    let cells = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+      .map(d => `<span class="cal-wd" aria-hidden="true">${d}</span>`).join("");
+    for (let i = 0; i < lead; i++) cells += '<span class="cal-day pad" aria-hidden="true"></span>';
+    for (let d = 1; d <= count; d++) {
+      const iso = calMonth + "-" + String(d).padStart(2, "0");
+      const info = days[iso];
+      const cls = ["cal-day"];
+      if (tripOK && iso >= startDate && iso <= endDate) cls.push("in-trip");
+      if (iso === today) cls.push("today");
+      if (iso === calSelected) cls.push("sel");
+      const mark = iso === startDate ? " ✈️" : iso === endDate ? " 🌅" : "";
+      let sub = "", aria = fmtDay(iso);
+      if (info) {
+        if (info.out) { sub += `<span class="cal-out">−${fmtK(info.out)}</span>`; aria += `, spent ${fmt(info.out)} FCFA`; }
+        if (info.inn) { sub += `<span class="cal-in">+${fmtK(info.inn)}</span>`; aria += `, added ${fmt(info.inn)} FCFA`; }
+        if (info.plan) { sub += '<span aria-hidden="true">🔮</span>'; aria += `, ${info.plan} planned`; }
+      }
+      cells += `<button type="button" class="${cls.join(" ")}" data-iso="${iso}" aria-pressed="${iso === calSelected}" aria-label="${esc(aria)}">
+        <span class="cal-num">${d}${mark}</span><span class="cal-sub">${sub}</span></button>`;
+    }
+    $("calBody").innerHTML = `<div class="cal-grid">${cells}</div>` + calDetail();
+  }
+
+  // the tapped day's entries, reusing the transaction-row look (read-only)
+  function calDetail() {
+    if (!calSelected) return "";
+    const when = new Date(calSelected + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    const rows = state.transactions.filter(t => t.date === calSelected)
+      .sort((a, b) => a.created - b.created)
+      .map(t => {
+        const isFund = t.type === "fund";
+        const c = isFund ? { emoji: "💰", label: "Funds" } : catInfo(t.category);
+        const label = t.label || (isFund ? "Funds added" : c.label);
+        return `<div class="tx ${isFund ? "is-fund" : "is-expense"}">
+          <span class="tx-emoji">${c.emoji}</span>
+          <div class="tx-info"><div class="tx-label">${esc(label)}</div><div class="tx-meta">${isFund ? "funds" : esc(c.label.toLowerCase())}</div></div>
+          <span class="tx-amount">${isFund ? "+" : "−"}${esc(fmt(t.amount))}</span>
+        </div>`;
+      }).concat(state.planned.filter(p => p.date === calSelected)
+        .sort((a, b) => a.created - b.created)
+        .map(p => {
+          const c = catInfo(p.category);
+          const label = p.label || c.label;
+          return `<div class="tx is-planned">
+            <span class="tx-emoji">🔮</span>
+            <div class="tx-info"><div class="tx-label">${esc(label)}</div><div class="tx-meta">planned · ${esc(c.label.toLowerCase())}</div></div>
+            <span class="tx-amount">−${esc(fmt(p.amount))}</span>
+          </div>`;
+        })).join("");
+    return `<p class="cal-detail-title">${esc(when)}</p>` +
+      (rows ? `<div class="tx-list">${rows}</div>` : '<div class="empty">Nothing on this day — a blank page in the story. 🍃</div>');
+  }
+
+  function calShift(delta) {
+    const [y, m] = calMonth.split("-").map(Number);
+    calMonth = new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7);
+    calSelected = null;
+    renderCalendar();
+  }
+  $("calPrev").addEventListener("click", () => calShift(-1));
+  $("calNext").addEventListener("click", () => calShift(1));
+  $("calTodayBtn").addEventListener("click", () => { calMonth = todayISO().slice(0, 7); calSelected = todayISO(); renderCalendar(); });
+  $("calBody").addEventListener("click", (e) => {
+    const day = e.target.closest(".cal-day[data-iso]");
+    if (!day) return;
+    calSelected = calSelected === day.dataset.iso ? null : day.dataset.iso;
+    renderCalendar();
+  });
+
   function render() {
     renderBalance(); renderBudget(); renderChart(); renderTx(); renderDatesChip();
-    renderCountdown(); renderPlanned(); renderNotes();
+    renderCountdown(); renderPlanned(); renderNotes(); renderCalendar();
   }
 
   // ── form: mode & categories ────────────────────
