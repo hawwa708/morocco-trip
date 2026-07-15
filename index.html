@@ -353,6 +353,19 @@
   .cal-out{color:var(--terracotta-deep)}
   .cal-in{color:var(--sage-deep)}
   .cal-detail-title{font-size:.85rem;font-weight:600;color:var(--ink-2);margin:16px 0 2px}
+  .cal-hint{text-align:center;font-size:.82rem;color:var(--ink-3);margin-top:12px}
+  .cal-todo-count{color:var(--sage-deep)}
+  .cal-todos{display:flex;flex-direction:column;margin-top:6px}
+  .cal-todo-row{display:flex;align-items:center;gap:4px}
+  .cal-todo-row .note-check{flex:1}
+  .cal-todo-del{border:none;background:transparent;color:var(--ink-3);cursor:pointer;font-size:.85rem;
+    font-family:inherit;border-radius:999px;padding:5px 10px;opacity:.5;transition:opacity .15s,background .15s}
+  .cal-todo-row:hover .cal-todo-del,.cal-todo-del:focus-visible,.cal-todo-del.confirm{opacity:1}
+  .cal-todo-del.confirm{background:var(--terracotta);color:#fff;font-size:.75rem;font-weight:700}
+  .cal-todo-form{display:flex;gap:8px;margin-top:10px}
+  .cal-todo-form input{flex:1;min-width:0;border:1px solid var(--line);border-radius:999px;padding:9px 14px;
+    font-family:inherit;font-size:.9rem;background:#fff;color:var(--ink)}
+  .cal-todo-form input:focus{outline:2px solid var(--sage);outline-offset:1px;border-color:var(--sage)}
   @media (max-width:720px){
     .cal-grid{gap:4px}
     .cal-day{min-height:50px;border-radius:10px;padding:5px 2px 4px}
@@ -704,6 +717,7 @@
   function normalize(s) {           // additive fields: older exports / cloud copies load fine
     if (!Array.isArray(s.notes)) s.notes = [];
     if (!Array.isArray(s.planned)) s.planned = [];
+    if (!Array.isArray(s.todos)) s.todos = [];
     return s;
   }
   function load() {
@@ -1064,12 +1078,13 @@
 
     // this month's activity, day by day
     const days = {};
-    const at = (iso) => days[iso] || (days[iso] = { out: 0, inn: 0, plan: 0 });
+    const at = (iso) => days[iso] || (days[iso] = { out: 0, inn: 0, plan: 0, td: 0, tdDone: 0 });
     for (const t of state.transactions) {
       if (!t.date || !t.date.startsWith(calMonth)) continue;
       if (t.type === "expense") at(t.date).out += t.amount; else at(t.date).inn += t.amount;
     }
     for (const p of state.planned) if (p.date && p.date.startsWith(calMonth)) at(p.date).plan++;
+    for (const td of state.todos) if (td.date && td.date.startsWith(calMonth)) { const o = at(td.date); o.td++; if (td.done) o.tdDone++; }
 
     const { startDate, endDate } = state.settings;
     const tripOK = startDate && endDate && isoToUTC(endDate) >= isoToUTC(startDate);
@@ -1093,11 +1108,20 @@
         if (info.out) { sub += `<span class="cal-out">−${fmtK(info.out)}</span>`; aria += `, spent ${fmt(info.out)} FCFA`; }
         if (info.inn) { sub += `<span class="cal-in">+${fmtK(info.inn)}</span>`; aria += `, added ${fmt(info.inn)} FCFA`; }
         if (info.plan) { sub += '<span aria-hidden="true">🔮</span>'; aria += `, ${info.plan} planned`; }
+        if (info.td) { sub += `<span class="cal-todo-count">☑︎ ${info.tdDone}/${info.td}</span>`; aria += `, ${info.tdDone} of ${info.td} to-dos done`; }
       }
       cells += `<button type="button" class="${cls.join(" ")}" data-iso="${iso}" aria-pressed="${iso === calSelected}" aria-label="${esc(aria)}">
         <span class="cal-num">${d}${mark}</span><span class="cal-sub">${sub}</span></button>`;
     }
-    $("calBody").innerHTML = `<div class="cal-grid">${cells}</div>` + calDetail();
+    // a full render() can rebuild us mid-typing — carry the to-do draft across
+    const prevInput = $("calTodoInput");
+    const draft = prevInput ? { v: prevInput.value, f: document.activeElement === prevInput } : null;
+    $("calBody").innerHTML = `<div class="cal-grid">${cells}</div>` +
+      (calSelected ? calDetail() : '<p class="cal-hint">Tap a day to see its entries and to-dos 📌</p>');
+    if (draft && calSelected) {
+      const inp = $("calTodoInput");
+      if (inp) { inp.value = draft.v; if (draft.f) inp.focus(); }
+    }
   }
 
   // the tapped day's entries, reusing the transaction-row look (read-only)
@@ -1126,8 +1150,23 @@
             <span class="tx-amount">−${esc(fmt(p.amount))}</span>
           </div>`;
         })).join("");
+    const todos = state.todos.filter(t => t.date === calSelected).sort((a, b) => a.created - b.created);
+    const doneN = todos.filter(t => t.done).length;
+    const todoRows = todos.map(t => `<div class="cal-todo-row">
+        <button type="button" class="note-check cal-todo-tick${t.done ? " done" : ""}" role="checkbox" aria-checked="${t.done}" data-tid="${esc(t.id)}">
+          <span class="cbox" aria-hidden="true">${t.done ? "✓" : ""}</span>
+          <span class="clabel">${esc(t.text)}</span>
+        </button>
+        <button type="button" class="cal-todo-del" data-tid="${esc(t.id)}" aria-label="Delete to-do ${esc(t.text)}">✕</button>
+      </div>`).join("");
     return `<p class="cal-detail-title">${esc(when)}</p>` +
-      (rows ? `<div class="tx-list">${rows}</div>` : '<div class="empty">Nothing on this day — a blank page in the story. 🍃</div>');
+      (rows ? `<div class="tx-list">${rows}</div>` : "") +
+      `<p class="cal-detail-title">To-do${todos.length ? ` · ${doneN}/${todos.length}` : ""}</p>` +
+      (todoRows ? `<div class="cal-todos">${todoRows}</div>` : "") +
+      `<form class="cal-todo-form" id="calTodoForm">
+        <input id="calTodoInput" maxlength="80" placeholder="Add a to-do for this day…" autocomplete="off" aria-label="New to-do for this day">
+        <button type="submit" class="mini-btn">＋ Add</button>
+      </form>`;
   }
 
   function calShift(delta) {
@@ -1140,10 +1179,49 @@
   $("calNext").addEventListener("click", () => calShift(1));
   $("calTodayBtn").addEventListener("click", () => { calMonth = todayISO().slice(0, 7); calSelected = todayISO(); renderCalendar(); });
   $("calBody").addEventListener("click", (e) => {
+    const tick = e.target.closest(".cal-todo-tick");
+    if (tick) {
+      const t = state.todos.find(x => x.id === tick.dataset.tid);
+      if (!t) return;
+      t.done = !t.done;
+      save(); renderCalendar();
+      const dayList = state.todos.filter(x => x.date === calSelected);
+      if (t.done && dayList.length && dayList.every(x => x.done)) {
+        burst($("calCard"), ["✅", "🎉", "🌟", "🐫"]);
+        toast("Day all ticked off! 🎉", "success");
+      }
+      return;
+    }
+    const del = e.target.closest(".cal-todo-del");
+    if (del) {
+      if (del.classList.contains("confirm")) {
+        state.todos = state.todos.filter(x => x.id !== del.dataset.tid);
+        save(); renderCalendar();
+        toast("To-do deleted", "danger");
+      } else {
+        del.classList.add("confirm");
+        del.textContent = "Sure?";
+        clearTimeout(confirmTimer);
+        confirmTimer = setTimeout(() => { del.classList.remove("confirm"); del.textContent = "✕"; }, 2600);
+      }
+      return;
+    }
     const day = e.target.closest(".cal-day[data-iso]");
     if (!day) return;
     calSelected = calSelected === day.dataset.iso ? null : day.dataset.iso;
     renderCalendar();
+  });
+  $("calBody").addEventListener("submit", (e) => {
+    if (e.target.id !== "calTodoForm") return;
+    e.preventDefault();
+    const input = $("calTodoInput");
+    const text = input.value.trim();
+    if (!text || !calSelected) return;
+    input.value = "";                       // clear before re-render so the draft carry-over stays empty
+    state.todos.push({ id: uid(), date: calSelected, text, done: false, created: Date.now() });
+    save(); renderCalendar();
+    const again = $("calTodoInput");
+    if (again) again.focus();
   });
 
   function render() {
