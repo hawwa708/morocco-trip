@@ -249,6 +249,28 @@
     to{transform:translate(var(--dx),var(--dy)) rotate(var(--rot)) scale(1.1);opacity:0}
   }
 
+  /* ── calculator ──────────────────────────────── */
+  #calcDialog{max-width:360px}
+  .calc-screen{background:var(--sage-mist);border:1px solid var(--line);border-radius:16px;
+    padding:14px 16px;text-align:right;margin-bottom:14px;min-width:0}
+  .calc-expr{font-size:.82rem;color:var(--ink-3);min-height:1.2em;font-variant-numeric:tabular-nums;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .calc-value{font-size:2rem;font-weight:650;line-height:1.25;font-variant-numeric:tabular-nums;
+    white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+  .calc-value.small{font-size:1.4rem}
+  .calc-value:focus{outline:none}
+  .calc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .calc-key{border:1px solid var(--line);background:#fff;border-radius:14px;padding:13px 0;
+    font-family:inherit;font-size:1.05rem;font-weight:600;color:var(--ink);cursor:pointer;
+    transition:transform .12s, background .15s, box-shadow .15s}
+  .calc-key:hover{background:var(--card-soft)}
+  .calc-key:active{transform:scale(.92)}
+  .calc-key:focus-visible{outline:2px solid var(--sage);outline-offset:1px}
+  .calc-key.op{background:var(--sage-soft);border-color:transparent;color:var(--sage-deep)}
+  .calc-key.op.armed{background:var(--sage);color:#fff}
+  .calc-key.warn{background:var(--terracotta-soft);border-color:transparent;color:var(--terracotta-deep)}
+  .calc-key.eq{background:var(--sage);border-color:transparent;color:#fff}
+
   /* ── enhancements: card entrance ─────────────── */
   @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}}
   body.loaded .card{animation:fadeUp .55s cubic-bezier(.3,.9,.4,1) backwards}
@@ -422,6 +444,7 @@
     </div>
     <div class="header-actions">
       <span class="chip" id="datesChip">no dates set</span>
+      <button class="icon-btn" id="calcBtn" title="Calculator" aria-label="Calculator">🧮</button>
       <button class="icon-btn" id="syncBtn" title="Cloud sync" aria-label="Cloud sync">☁<span class="sync-dot" id="syncDot"></span></button>
       <button class="icon-btn" id="exportBtn" title="Export data" aria-label="Export data">⤓</button>
       <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">⚙</button>
@@ -643,6 +666,43 @@
     </div>
     <div class="danger-zone" id="noteDanger" hidden>
       <button class="mini-btn danger" id="noteDelete">Delete note</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="calcDialog">
+  <div class="dialog-body">
+    <h3>Calculator 🧮</h3>
+    <p class="dialog-sub">Quick maths — then send the result straight into the entry form.</p>
+    <div class="calc-screen">
+      <div class="calc-expr" id="calcExpr" aria-hidden="true"></div>
+      <div class="calc-value" id="calcValue" aria-live="polite" tabindex="-1">0</div>
+    </div>
+    <div class="calc-grid" id="calcKeys">
+      <button type="button" class="calc-key warn" data-k="C" aria-label="Clear all">C</button>
+      <button type="button" class="calc-key warn" data-k="back" aria-label="Backspace">⌫</button>
+      <button type="button" class="calc-key op" data-k="%" aria-label="Percent">%</button>
+      <button type="button" class="calc-key op" data-k="/" aria-label="Divide">÷</button>
+      <button type="button" class="calc-key" data-k="7">7</button>
+      <button type="button" class="calc-key" data-k="8">8</button>
+      <button type="button" class="calc-key" data-k="9">9</button>
+      <button type="button" class="calc-key op" data-k="*" aria-label="Multiply">×</button>
+      <button type="button" class="calc-key" data-k="4">4</button>
+      <button type="button" class="calc-key" data-k="5">5</button>
+      <button type="button" class="calc-key" data-k="6">6</button>
+      <button type="button" class="calc-key op" data-k="-" aria-label="Subtract">−</button>
+      <button type="button" class="calc-key" data-k="1">1</button>
+      <button type="button" class="calc-key" data-k="2">2</button>
+      <button type="button" class="calc-key" data-k="3">3</button>
+      <button type="button" class="calc-key op" data-k="+" aria-label="Add">+</button>
+      <button type="button" class="calc-key" data-k="0">0</button>
+      <button type="button" class="calc-key" data-k="000" aria-label="Triple zero">000</button>
+      <button type="button" class="calc-key" data-k="." aria-label="Decimal point">,</button>
+      <button type="button" class="calc-key eq" data-k="=" aria-label="Equals">=</button>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-quiet" id="calcClose">Close</button>
+      <button class="btn btn-fund" id="calcUse">Use as amount</button>
     </div>
   </div>
 </dialog>
@@ -1718,6 +1778,95 @@
     }
     setTimeout(() => { fx.textContent = ""; bursting = false; }, 1500);
   }
+
+  // ── calculator ─────────────────────────────────
+  const calcDlg = $("calcDialog");
+  const CALC_OPS = { "+": (a, b) => a + b, "-": (a, b) => a - b, "*": (a, b) => a * b, "/": (a, b) => b === 0 ? NaN : a / b };
+  const CALC_GLYPH = { "+": "+", "-": "−", "*": "×", "/": "÷" };
+  let calcCur = "0", calcPrev = null, calcOp = null, calcOw = false;  // calcOw: next digit starts a new number
+
+  const calcNumToStr = (n) => (Number.isFinite(n) && Math.abs(n) < 1e15) ? parseFloat(n.toFixed(10)).toString() : "Error";
+  function calcFmtStr(s) {
+    if (s === "Error") return "Oops 🤯";
+    const neg = s.startsWith("-") ? "−" : "";
+    if (neg) s = s.slice(1);
+    const parts = s.split(".");
+    const gi = (parts[0] || "0").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return neg + gi + (parts.length > 1 ? "," + parts[1] : "");
+  }
+  function calcRenderScreen() {
+    const v = calcFmtStr(calcCur);
+    $("calcValue").textContent = v;
+    $("calcValue").classList.toggle("small", v.length > 13);
+    $("calcExpr").textContent = (calcOp !== null && calcPrev !== null)
+      ? calcFmtStr(calcNumToStr(calcPrev)) + " " + CALC_GLYPH[calcOp] : "";
+    document.querySelectorAll("#calcKeys .op").forEach(b =>
+      b.classList.toggle("armed", b.dataset.k === calcOp && calcOw));
+  }
+  function calcInput(k) {
+    if (calcCur === "Error" && k !== "C") { calcCur = "0"; calcPrev = null; calcOp = null; calcOw = false; }
+    if (/^\d+$/.test(k)) {
+      if (calcOw) { if (calcOp === null) calcPrev = null; calcCur = "0"; calcOw = false; }
+      if (calcCur.replace(/\D/g, "").length + k.length <= 12) {
+        calcCur = calcCur === "0" ? (k === "000" ? "0" : k) : calcCur + k;
+      }
+    } else if (k === ".") {
+      if (calcOw) { if (calcOp === null) calcPrev = null; calcCur = "0"; calcOw = false; }
+      if (!calcCur.includes(".")) calcCur += ".";
+    } else if (k === "back") {
+      if (!calcOw) calcCur = calcCur.slice(0, -1) || "0";
+    } else if (k === "C") {
+      calcCur = "0"; calcPrev = null; calcOp = null; calcOw = false;
+    } else if (k === "%") {
+      const v = parseFloat(calcCur) || 0;
+      // classic behavior: with a pending + or −, % means "percent of the first number"
+      calcCur = calcNumToStr((calcPrev !== null && (calcOp === "+" || calcOp === "-")) ? calcPrev * v / 100 : v / 100);
+      calcOw = false;
+    } else if (CALC_OPS[k]) {
+      if (calcOp !== null && !calcOw) {
+        calcPrev = CALC_OPS[calcOp](calcPrev, parseFloat(calcCur));
+        calcCur = calcNumToStr(calcPrev);
+      } else if (calcPrev === null || calcOp === null) {
+        calcPrev = parseFloat(calcCur);
+      }
+      calcOp = k; calcOw = true;
+    } else if (k === "=") {
+      if (calcOp !== null) {
+        calcCur = calcNumToStr(CALC_OPS[calcOp](calcPrev, parseFloat(calcCur)));
+        calcPrev = null; calcOp = null; calcOw = true;
+      }
+    }
+    calcRenderScreen();
+  }
+  $("calcKeys").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-k]");
+    if (b) calcInput(b.dataset.k);
+  });
+  calcDlg.addEventListener("keydown", (e) => {
+    let k = null;
+    if (/^\d$/.test(e.key)) k = e.key;
+    else if (CALC_OPS[e.key]) k = e.key;
+    else if (e.key === "Enter" || e.key === "=") k = "=";
+    else if (e.key === "." || e.key === ",") k = ".";
+    else if (e.key === "Backspace") k = "back";
+    else if (e.key === "Delete" || e.key.toLowerCase() === "c") k = "C";
+    else if (e.key === "%") k = "%";
+    if (k !== null) { e.preventDefault(); calcInput(k); }
+  });
+  $("calcBtn").addEventListener("click", () => { calcRenderScreen(); calcDlg.showModal(); });
+  $("calcClose").addEventListener("click", () => calcDlg.close());
+  $("calcUse").addEventListener("click", () => {
+    const v = Math.round(parseFloat(calcCur));
+    if (!Number.isFinite(v) || v <= 0) { toast("Nothing to use yet — type an amount first"); return; }
+    burst($("calcUse"), ["🧮", "✨", "💫"]);
+    calcDlg.close();
+    const inp = $("amountInput");
+    inp.value = fmt(v);
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    $("addCard").scrollIntoView({ behavior: motionOK() ? "smooth" : "auto", block: "center" });
+    inp.focus({ preventScroll: true });
+    toast("Amount ready — " + fmtFcfa(v) + " ✨", "success");
+  });
 
   // ── settings / onboarding dialog ───────────────
   const dlg = $("setupDialog");
